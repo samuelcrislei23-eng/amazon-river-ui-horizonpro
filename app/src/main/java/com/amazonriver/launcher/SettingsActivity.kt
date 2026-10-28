@@ -12,7 +12,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.*
 
-class SettingsActivity : Activity() {
+class SettingsActivity : BaseActivity() {
     private val reqPick = 41
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -58,7 +58,16 @@ class SettingsActivity : Activity() {
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(4) })
         row.addView(arButton("Escuro", p, p.dark) { Prefs.setDark(this, true); render() },
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(4) })
-        add(row)
+        add(row, 10)
+
+        // Pesquisa
+        section("Barra de pesquisa")
+        val srow = LinearLayout(this)
+        srow.addView(arButton("Em cima", p, Prefs.searchTop(this)) { Prefs.setSearchTop(this, true); render() },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { rightMargin = dp(4) })
+        srow.addView(arButton("Embaixo", p, !Prefs.searchTop(this)) { Prefs.setSearchTop(this, false); render() },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = dp(4) })
+        add(srow, 10)
 
         // Papel de parede
         section("Papel de parede")
@@ -88,7 +97,7 @@ class SettingsActivity : Activity() {
             catch (e: Exception) { startActivity(Intent(Settings.ACTION_SETTINGS)) }
         }, 10)
 
-        add(arLabel("v1.0.0 · AMOLED 448 × 558", p, 9f), 24)
+        add(arLabel("v1.1.0 · AMOLED 448 × 558", p, 9f), 24)
         setContentView(scroll)
     }
 

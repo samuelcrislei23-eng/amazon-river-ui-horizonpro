@@ -2,6 +2,7 @@ package com.amazonriver.launcher
 
 import android.app.Activity
 import android.content.Context
+import android.content.res.Configuration
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -38,6 +39,8 @@ object Prefs {
     fun setDark(c: Context, v: Boolean) = sp(c).edit().putBoolean("dark", v).putLong("stamp", System.nanoTime()).apply()
     fun touch(c: Context) = sp(c).edit().putLong("stamp", System.nanoTime()).apply()
     fun stamp(c: Context) = sp(c).getLong("stamp", 0L)
+    fun searchTop(c: Context) = sp(c).getBoolean("search_top", true)
+    fun setSearchTop(c: Context, v: Boolean) = sp(c).edit().putBoolean("search_top", v).putLong("stamp", System.nanoTime()).apply()
 }
 
 object Wallpaper {
@@ -117,3 +120,13 @@ fun Context.arButton(text: String, p: Palette, filled: Boolean, onClick: () -> U
         isClickable = true
         setOnClickListener { onClick() }
     }
+
+/** Normaliza a densidade: a tela vira ~224dp de largura, então dp/sp ficam proporcionais a qualquer aparelho. */
+open class BaseActivity : Activity() {
+    override fun attachBaseContext(base: Context) {
+        val cfg = Configuration(base.resources.configuration)
+        val wpx = base.resources.displayMetrics.widthPixels
+        cfg.densityDpi = (wpx / 224f * 160f).toInt()
+        super.attachBaseContext(base.createConfigurationContext(cfg))
+    }
+}

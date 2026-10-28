@@ -1,20 +1,25 @@
 package com.amazonriver.launcher
 
-import android.app.Activity
 import android.content.ComponentName
 import android.content.Intent
 import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
+import android.text.Editable
+import android.text.InputType
 import android.text.TextUtils
-import android.view.Gravity
+import android.text.TextWatcher
 import android.view.GestureDetector
+import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.*
 import java.util.Locale
 
@@ -23,11 +28,14 @@ private const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
 
 data class AppItem(val label: String, val pkg: String, val cls: String)
 
-class LauncherActivity : Activity() {
+class LauncherActivity : BaseActivity() {
     private var stamp = -1L
     private var drawerOpen = false
     private var drawer: View? = null
     private var list: ListView? = null
+    private var search: EditText? = null
+    private var adapter: AppAdapter? = null
+    private var allApps: List<AppItem> = emptyList()
     private lateinit var detector: GestureDetector
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -85,7 +93,7 @@ class LauncherActivity : Activity() {
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
         col.gravity = Gravity.CENTER_HORIZONTAL
-        col.setPadding(dp(16), dp(10), dp(16), dp(12))
+        col.setPadding(dp(14), dp(6), dp(14), dp(8))
         col.setOnTouchListener { _, e -> detector.onTouchEvent(e); true }
 
         fun spacer() = View(this).also { col.addView(it, LinearLayout.LayoutParams(MATCH, 0, 1f)) }
@@ -94,28 +102,29 @@ class LauncherActivity : Activity() {
         val mark = ImageView(this)
         mark.setImageResource(R.drawable.ar_mark)
         mark.setColorFilter(p.text, PorterDuff.Mode.SRC_IN)
-        col.addView(mark, LinearLayout.LayoutParams(dp(40), dp(40)))
-        col.addView(arLabel("Amazon River", p, 10f).apply { letterSpacing = 0.24f },
+        col.addView(mark, LinearLayout.LayoutParams(dp(60), dp(60)))
+        col.addView(arLabel("Amazon River", p, 12f).apply { letterSpacing = 0.22f },
             LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = dp(6) })
 
         val clock = TextClock(this).apply {
             format12Hour = "HH:mm"; format24Hour = "HH:mm"
-            textSize = 38f; includeFontPadding = false
+            textSize = 48f; includeFontPadding = false
             setTextColor(p.text)
-            typeface = Typeface.create("sans-serif-thin", Typeface.NORMAL)
+            typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
         }
-        col.addView(clock, LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = dp(14) })
+        col.addView(clock, LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = dp(10) })
         val date = TextClock(this).apply {
             format12Hour = "EEE, d MMM"; format24Hour = "EEE, d MMM"
-            textSize = 11f; letterSpacing = 0.1f
+            textSize = 14f; letterSpacing = 0.1f
             setTextColor(p.muted)
             if (Build.VERSION.SDK_INT >= 28) isAllCaps = true
         }
         col.addView(date, LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = dp(2) })
         spacer()
 
-        col.addView(arButton("Todos os apps", p, true) { openDrawer() }, LinearLayout.LayoutParams(MATCH, WRAP))
-        val link = arLabel("Configurações", p, 10f, p.muted).apply {
+        col.addView(arButton("Todos os apps", p, true) { openDrawer() }.apply { textSize = 14f; minHeight = dp(42) },
+            LinearLayout.LayoutParams(MATCH, WRAP))
+        val link = arLabel("Configurações", p, 11f, p.muted).apply {
             paintFlags = paintFlags or Paint.UNDERLINE_TEXT_FLAG
             setPadding(dp(8), dp(8), dp(8), dp(2))
             setOnClickListener { openSettings() }
@@ -124,32 +133,88 @@ class LauncherActivity : Activity() {
         return col
     }
 
+    private fun buildSearch(p: Palette): View {
+        val row = LinearLayout(this)
+        row.gravity = Gravity.CENTER_VERTICAL
+        row.background = GradientDrawable().apply { setStroke(dp(1), p.text) }
+        row.setPadding(dp(10), 0, dp(10), 0)
+        val icon = ImageView(this)
+        icon.setImageResource(R.drawable.ic_search)
+        icon.setColorFilter(p.text, PorterDuff.Mode.SRC_IN)
+        row.addView(icon, LinearLayout.LayoutParams(dp(20), dp(20)))
+        val et = EditText(this).apply {
+            hint = "PESQUISAR"
+            setHintTextColor(p.muted)
+            setTextColor(p.text)
+            textSize = 14f
+            letterSpacing = 0.06f
+            background = null
+            setPadding(dp(8), 0, 0, 0)
+            isSingleLine = true
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            imeOptions = EditorInfo.IME_ACTION_SEARCH
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
+                override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(s: Editable?) { applyFilter(s?.toString() ?: "") }
+            })
+            setOnEditorActionListener { _, _, _ ->
+                adapter?.items?.firstOrNull()?.let { launch(it) }
+                true
+            }
+        }
+        search = et
+        icon.setOnClickListener {
+            et.requestFocus()
+            (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(et, 0)
+        }
+        row.addView(et, LinearLayout.LayoutParams(0, dp(42), 1f))
+        return row
+    }
+
     private fun buildDrawer(p: Palette): View {
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
         col.setBackgroundColor(p.panel)
-        col.setPadding(dp(14), dp(8), dp(14), dp(4))
+        col.setPadding(dp(14), dp(8), dp(14), dp(6))
         col.isClickable = true
 
         val header = LinearLayout(this)
         header.gravity = Gravity.CENTER_VERTICAL
-        header.addView(arLabel("Todos os apps", p), LinearLayout.LayoutParams(0, WRAP, 1f))
-        header.addView(arLabel("Fechar", p, 10f, p.text).apply {
+        header.addView(arLabel("Todos os apps", p, 11f), LinearLayout.LayoutParams(0, WRAP, 1f))
+        header.addView(arLabel("Fechar", p, 11f, p.text).apply {
             setPadding(dp(6), dp(8), 0, dp(8))
             setOnClickListener { closeDrawer() }
         })
-        col.addView(header, LinearLayout.LayoutParams(MATCH, dp(38)))
 
         val lv = ListView(this)
         lv.divider = ColorDrawable(p.border)
         lv.dividerHeight = 1
         lv.setSelector(ColorDrawable(0x22888888))
         lv.isVerticalScrollBarEnabled = false
-        lv.setOnItemClickListener { _, _, pos, _ -> (lv.adapter.getItem(pos) as? AppItem)?.let { launch(it) } }
-        lv.adapter = AppAdapter(emptyList(), p)
+        val ad = AppAdapter(emptyList(), p)
+        adapter = ad
+        lv.adapter = ad
+        lv.setOnItemClickListener { _, _, pos, _ -> (ad.getItem(pos) as? AppItem)?.let { launch(it) } }
         list = lv
-        col.addView(lv, LinearLayout.LayoutParams(MATCH, 0, 1f))
+
+        val bar = buildSearch(p)
+        col.addView(header, LinearLayout.LayoutParams(MATCH, dp(38)))
+        if (Prefs.searchTop(this)) {
+            col.addView(bar, LinearLayout.LayoutParams(MATCH, WRAP).apply { bottomMargin = dp(6) })
+            col.addView(lv, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        } else {
+            col.addView(lv, LinearLayout.LayoutParams(MATCH, 0, 1f))
+            col.addView(bar, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(6) })
+        }
         return col
+    }
+
+    private fun applyFilter(q: String) {
+        val t = q.trim().lowercase(Locale.getDefault())
+        adapter?.items = if (t.isEmpty()) allApps
+        else allApps.filter { it.label.lowercase(Locale.getDefault()).contains(t) }
+        adapter?.notifyDataSetChanged()
     }
 
     private fun loadApps(): List<AppItem> {
@@ -159,10 +224,17 @@ class LauncherActivity : Activity() {
             .sortedBy { it.label.lowercase(Locale.ROOT) }
     }
 
+    private fun hideKeyboard() {
+        (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
+            .hideSoftInputFromWindow(window.decorView.windowToken, 0)
+    }
+
     private fun openDrawer() {
         val d = drawer ?: return
         if (drawerOpen) return
-        list?.adapter = AppAdapter(loadApps(), Palette(Prefs.isDark(this)))
+        allApps = loadApps()
+        search?.setText("")
+        applyFilter("")
         drawerOpen = true
         d.visibility = View.VISIBLE
         d.translationY = resources.displayMetrics.heightPixels.toFloat()
@@ -172,6 +244,8 @@ class LauncherActivity : Activity() {
     private fun closeDrawer() {
         val d = drawer ?: return
         drawerOpen = false
+        hideKeyboard()
+        search?.setText("")
         d.animate().translationY(resources.displayMetrics.heightPixels.toFloat()).setDuration(160)
             .withEndAction { if (!drawerOpen) d.visibility = View.GONE }.start()
     }
@@ -188,16 +262,16 @@ class LauncherActivity : Activity() {
         }
     }
 
-    private inner class AppAdapter(val items: List<AppItem>, val p: Palette) : BaseAdapter() {
+    private inner class AppAdapter(var items: List<AppItem>, val p: Palette) : BaseAdapter() {
         override fun getCount() = items.size
         override fun getItem(position: Int): Any = items[position]
         override fun getItemId(position: Int): Long = position.toLong()
         override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
             val tv = (convertView as? TextView) ?: TextView(this@LauncherActivity).apply {
-                textSize = 13f; letterSpacing = 0.06f; maxLines = 1
+                textSize = 14f; letterSpacing = 0.06f; maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END
                 typeface = Typeface.create("sans-serif", Typeface.NORMAL)
-                setPadding(dp(2), dp(11), dp(2), dp(11))
+                setPadding(dp(2), dp(12), dp(2), dp(12))
             }
             tv.setTextColor(p.text)
             tv.text = items[position].label.uppercase(Locale.getDefault())
